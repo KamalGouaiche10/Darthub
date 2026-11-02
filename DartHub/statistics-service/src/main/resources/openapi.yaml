@@ -1,0 +1,219 @@
+openapi: 3.0.3
+info:
+  title: statistics-service
+  description: >
+    Aggregati statistici, sola lettura verso l'esterno, alimentati esclusivamente da eventi MQTT
+    (ARCHITETTURA.md §5.6). Porta 7006. Non chiama nessun altro microservizio.
+  version: 1.0.0
+servers:
+  - url: http://localhost:7006
+
+paths:
+  /statistiche/giocatori/{id}:
+    get:
+      summary: Statistiche di un giocatore (self oppure PLATFORM_ADMIN)
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/PlayerId' } ]
+      responses:
+        '200':
+          description: Statistiche del giocatore
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlayerStatistics' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+
+  /statistiche/squadre/{id}:
+    get:
+      summary: Statistiche di una squadra
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        '200':
+          description: Statistiche della squadra
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TeamStatistics' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+
+  /statistiche/classifica:
+    get:
+      summary: Classifica dei giocatori, paginata
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { name: ordinaPer, in: query, schema: { type: string, enum: [percentualeVittorie, puntiTotali] } }
+        - { name: page, in: query, schema: { type: integer } }
+        - { name: size, in: query, schema: { type: integer } }
+      responses:
+        '200':
+          description: Lista ordinata di statistiche giocatore
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/PlayerStatistics' } }
+
+  /statistiche/locali/{id}:
+    get:
+      summary: Statistiche aggregate di un locale (su tutti i suoi bersagli)
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        '200':
+          description: Statistiche del locale
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LocaleStatistics' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+
+  /statistiche/bersagli/{id}:
+    get:
+      summary: Statistiche di un singolo bersaglio
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        '200':
+          description: Statistiche del bersaglio
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LocaleStatistics' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+
+  /statistiche/giochi/{id}:
+    get:
+      summary: Statistiche di un tipo di gioco
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        '200':
+          description: Statistiche del tipo di gioco
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GameStatistics' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+
+  /statistiche/globali:
+    get:
+      summary: Statistiche globali della piattaforma (PLATFORM_ADMIN)
+      security: [ { bearerAuth: [] } ]
+      responses:
+        '200':
+          description: Statistiche globali
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GlobalStatistics' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+
+  /health:
+    get:
+      summary: Stato del servizio
+      security: []
+      responses:
+        '200':
+          description: Stato
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Health' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    PlayerId:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
+
+  responses:
+    ForbiddenError:
+      description: Ruolo insufficiente o statistiche di un altro giocatore (NON_AUTORIZZATO)
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+    NotFoundError:
+      description: Nessuna statistica per questo identificativo
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        timestamp: { type: string, format: date-time }
+        status: { type: integer }
+        codice: { type: string }
+        messaggio: { type: string }
+        path: { type: string }
+
+    PlayerStatistics:
+      type: object
+      properties:
+        playerId: { type: integer, format: int64 }
+        partiteGiocate: { type: integer }
+        vittorie: { type: integer }
+        percentualeVittorie: { type: number }
+        puntiTotali: { type: integer }
+        punteggioMedio: { type: number }
+        migliorTiro: { type: integer }
+        updatedAt: { type: string, format: date-time }
+
+    TeamStatistics:
+      type: object
+      properties:
+        teamId: { type: integer, format: int64 }
+        partiteGiocate: { type: integer }
+        vittorie: { type: integer }
+        percentualeVittorie: { type: number }
+        puntiTotali: { type: integer }
+        punteggioMedio: { type: number }
+        updatedAt: { type: string, format: date-time }
+
+    LocaleStatistics:
+      type: object
+      properties:
+        localeId: { type: integer, format: int64 }
+        dartboardId: { type: integer, format: int64 }
+        numeroPartite: { type: integer }
+        giocatoriDistinti: { type: integer }
+        ultimoUtilizzo: { type: string, format: date-time, nullable: true }
+
+    GameStatistics:
+      type: object
+      properties:
+        gameTypeId: { type: integer, format: int64 }
+        partiteTotali: { type: integer }
+        mediaGiocatoriPerPartita: { type: number }
+
+    GlobalStatistics:
+      type: object
+      properties:
+        utentiTotali: { type: integer }
+        localiTotali: { type: integer }
+        partiteTotali: { type: integer }
+        torneiTotali: { type: integer }
+        updatedAt: { type: string, format: date-time }
+
+    Health:
+      type: object
+      properties:
+        servizio: { type: string }
+        versione: { type: string }
+        uptimeS: { type: integer, format: int64 }
+        database: { type: string, enum: [OK, KO] }
+        mqtt: { type: string, enum: [CONNESSO, DISCONNESSO] }

@@ -1,0 +1,16 @@
+
+user backend
+topic readwrite sensori/#
+topic readwrite darts/#
+topic readwrite giochi/#
+topic readwrite edge/#
+topic readwrite eventi/#
+topic readwrite sistema/#
+
+user webapp
+topic read eventi/#
+
+pattern readwrite sensori/%u/#
+pattern read darts/%u/#
+pattern write giochi/%u/#
+pattern write edge/%u/heartbeat

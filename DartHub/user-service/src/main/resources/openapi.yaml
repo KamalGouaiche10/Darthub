@@ -1,0 +1,477 @@
+openapi: 3.0.3
+info:
+  title: user-service
+  description: >
+    Autenticazione, utenti, profili giocatore, token dei dispositivi edge
+    (ARCHITETTURA.md §5.1). Porta 7001.
+  version: 1.0.0
+servers:
+  - url: http://localhost:7001
+
+paths:
+  /auth/register:
+    post:
+      summary: Registra PLAYER oppure LOCALE_ADMIN
+      description: PLAYER approvato; gestore IN_ATTESA. Il login e consentito anche al gestore in attesa se enabled=true.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
+      responses:
+        '201':
+          description: Utente creato
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '409': { $ref: '#/components/responses/ConflictError' }
+
+  /auth/login:
+    post:
+      summary: Login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: Token emessi
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenResponse' }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+
+  /auth/refresh:
+    post:
+      summary: Ruota il refresh token, revoca il precedente
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefreshRequest' }
+      responses:
+        '200':
+          description: Nuovi token
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenResponse' }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+
+  /auth/logout:
+    post:
+      summary: Revoca il refresh token corrente
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefreshRequest' }
+      responses:
+        '204': { description: Revocato }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+
+  /auth/jwks.json:
+    get:
+      summary: Chiave pubblica JWKS usata per verificare i JWT RS256
+      security: []
+      responses:
+        '200':
+          description: JSON Web Key Set pubblico
+          content:
+            application/json:
+              schema: { type: object }
+
+  /auth/service-token:
+    post:
+      summary: Emette un token per la comunicazione interna tra servizi
+      description: Richiede il segreto condiviso configurato nei servizi; non destinato al frontend.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [clientId, clientSecret]
+              properties:
+                clientId: { type: string }
+                clientSecret: { type: string, format: password }
+      responses:
+        '200':
+          description: Token di servizio emesso
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accessToken: { type: string }
+                  tokenType: { type: string, example: Bearer }
+                  expiresInSeconds: { type: integer, format: int64 }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+
+  /users:
+    get:
+      summary: Lista utenti, paginata
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { name: role, in: query, schema: { type: string } }
+        - { name: approvalStatus, in: query, schema: { type: string, enum: [APPROVATO, IN_ATTESA, RIFIUTATO] } }
+        - { name: page, in: query, schema: { type: integer } }
+        - { name: size, in: query, schema: { type: integer } }
+      responses:
+        '200':
+          description: Pagina di utenti
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PagedUsers' }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+
+  /users/lookup:
+    get:
+      summary: Verifica l'esistenza di un giocatore per username esatto o per ID (qualunque utente autenticato)
+      description: >
+        Serve ad aggiungere un avversario in "Nuova partita", validandolo prima di creare la
+        partita. Indicare esattamente uno tra `username` e `id`. Non elenca né cerca per prefisso e
+        restituisce solo {id, username, nickname}. Risolve unicamente utenti PLAYER abilitati:
+        per gli altri risponde 404, senza rivelare se l'utente esiste.
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { name: username, in: query, required: false, schema: { type: string } }
+        - { name: id, in: query, required: false, schema: { type: integer, format: int64 } }
+      responses:
+        '200':
+          description: Giocatore trovato
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlayerLookup' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+
+  /users/{id}:
+    get:
+      summary: Dettaglio utente (self oppure PLATFORM_ADMIN)
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/UserId' } ]
+      responses:
+        '200':
+          description: Utente
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+    put:
+      summary: Aggiorna email/nickname/avatar (self oppure PLATFORM_ADMIN)
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/UserId' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateUserRequest' }
+      responses:
+        '200':
+          description: Utente aggiornato
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+    delete:
+      summary: Elimina utente (PLATFORM_ADMIN)
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/UserId' } ]
+      responses:
+        '204': { description: Eliminato }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+
+  /users/{id}/password:
+    patch:
+      summary: Cambia password (self, richiede la vecchia password)
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/UserId' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChangePasswordRequest' }
+      responses:
+        '204': { description: Password cambiata }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+
+  /users/{id}/enabled:
+    patch:
+      summary: Abilita/disabilita utente (PLATFORM_ADMIN)
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/UserId' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetEnabledRequest' }
+      responses:
+        '204': { description: Stato aggiornato }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+
+  /users/{id}/role:
+    patch:
+      summary: Cambia ruolo (PLATFORM_ADMIN)
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/UserId' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChangeRoleRequest' }
+      responses:
+        '204': { description: Ruolo aggiornato }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+
+  /users/{id}/approvazione:
+    patch:
+      summary: Approva o rifiuta un account (PLATFORM_ADMIN)
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/UserId' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [stato]
+              properties:
+                stato: { type: string, enum: [APPROVATO, IN_ATTESA, RIFIUTATO] }
+      responses:
+        '204': { description: Stato di approvazione aggiornato }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+
+  /users/device-token:
+    post:
+      summary: Crea un utente EDGE_DEVICE ed emette un token a lunga scadenza (chiamata interna)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeviceTokenRequest' }
+      responses:
+        '201':
+          description: Token emesso
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeviceTokenResponse' }
+
+  /users/device-token/{deviceUserId}:
+    delete:
+      summary: Revoca il token e disabilita l'utente EDGE_DEVICE (chiamata interna)
+      security: []
+      parameters:
+        - name: deviceUserId
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        '204': { description: Revocato }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+
+  /health:
+    get:
+      summary: Stato del servizio
+      security: []
+      responses:
+        '200':
+          description: Stato
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Health' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    UserId:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
+
+  responses:
+    ValidationError:
+      description: Payload non valido
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    UnauthorizedError:
+      description: Token assente, scaduto o non valido
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    ForbiddenError:
+      description: Ruolo insufficiente o risorsa non di proprietà
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    NotFoundError:
+      description: Risorsa inesistente
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    ConflictError:
+      description: Username o email già in uso
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        timestamp: { type: string, format: date-time }
+        status: { type: integer }
+        codice: { type: string }
+        messaggio: { type: string }
+        path: { type: string }
+
+    RegisterRequest:
+      type: object
+      required: [username, email, password]
+      description: nickname obbligatorio per PLAYER (anche quando role e omesso); non richiesto per LOCALE_ADMIN.
+      properties:
+        username: { type: string }
+        email: { type: string, format: email }
+        password: { type: string, format: password }
+        nickname: { type: string }
+        role: { type: string, enum: [PLAYER, LOCALE_ADMIN], default: PLAYER }
+        firstName: { type: string, description: Nome }
+        lastName: { type: string, description: Cognome }
+
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username: { type: string, description: Email o nome utente }
+        password: { type: string, format: password }
+
+    RefreshRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken: { type: string }
+
+    TokenResponse:
+      type: object
+      properties:
+        accessToken: { type: string }
+        refreshToken: { type: string }
+        tokenType: { type: string, example: Bearer }
+        expiresInSeconds: { type: integer, format: int64 }
+
+    User:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        username: { type: string }
+        email: { type: string }
+        firstName: { type: string, nullable: true }
+        lastName: { type: string, nullable: true }
+        role:
+          type: string
+          enum: [PLAYER, LOCALE_ADMIN, GAME_ADMIN, PLATFORM_ADMIN, EDGE_DEVICE]
+        enabled: { type: boolean }
+        approvalStatus: { type: string, enum: [APPROVATO, IN_ATTESA, RIFIUTATO] }
+        nickname: { type: string, nullable: true }
+        avatarUrl: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+
+    PlayerLookup:
+      type: object
+      description: Proiezione minima di un giocatore, senza email, ruolo né stato di abilitazione.
+      properties:
+        id: { type: integer, format: int64 }
+        username: { type: string }
+        nickname: { type: string, nullable: true }
+
+    PagedUsers:
+      type: object
+      properties:
+        contenuto:
+          type: array
+          items: { $ref: '#/components/schemas/User' }
+        pagina: { type: integer }
+        dimensione: { type: integer }
+        totaleElementi: { type: integer, format: int64 }
+        totalePagine: { type: integer }
+
+    UpdateUserRequest:
+      type: object
+      properties:
+        email: { type: string, nullable: true }
+        firstName: { type: string, nullable: true }
+        lastName: { type: string, nullable: true }
+        nickname: { type: string, nullable: true }
+        avatarUrl: { type: string, nullable: true }
+
+    ChangePasswordRequest:
+      type: object
+      required: [oldPassword, newPassword]
+      properties:
+        oldPassword: { type: string, format: password }
+        newPassword: { type: string, format: password }
+
+    SetEnabledRequest:
+      type: object
+      required: [enabled]
+      properties:
+        enabled: { type: boolean }
+
+    ChangeRoleRequest:
+      type: object
+      required: [role]
+      properties:
+        role:
+          type: string
+          enum: [PLAYER, LOCALE_ADMIN, GAME_ADMIN, PLATFORM_ADMIN, EDGE_DEVICE]
+
+    DeviceTokenRequest:
+      type: object
+      required: [localeId, dartboardId]
+      properties:
+        localeId: { type: integer, format: int64 }
+        dartboardId: { type: integer, format: int64 }
+        serialNumber: { type: string, nullable: true }
+
+    DeviceTokenResponse:
+      type: object
+      properties:
+        deviceUserId: { type: integer, format: int64 }
+        token: { type: string }
+
+    Health:
+      type: object
+      properties:
+        servizio: { type: string }
+        versione: { type: string }
+        uptimeS: { type: integer, format: int64 }
+        database: { type: string, enum: [OK, KO] }
+        mqtt: { type: string, enum: [CONNESSO, DISCONNESSO] }

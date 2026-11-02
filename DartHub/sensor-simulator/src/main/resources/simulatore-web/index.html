@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#080d12">
+  <meta name="description" content="Pannello di controllo del sensore simulato DartHub.">
+  <title>DartHub — Sensore simulato</title>
+  <link rel="stylesheet" href="css/tailwind.css">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner flex items-center justify-between">
+      <div class="brand" aria-label="DartHub Simulator">
+        <span class="brand-mark" aria-hidden="true"><span></span></span>
+        <span class="brand-name">Dart<span>Hub</span><small>SIMULATOR</small></span>
+      </div>
+      <div class="topbar-meta flex items-center gap-4">
+        <span class="topbar-label"><span class="signal-dot"></span> SENSOR LAB</span>
+        <span class="topbar-divider"></span>
+        <span class="topbar-code">CONTROL ROOM / 01</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="page-shell">
+    <section class="intro flex items-end justify-between">
+      <div>
+        <div class="eyebrow"><span class="eyebrow-line"></span> MODALITÀ SIMULAZIONE</div>
+        <h1>Ogni tiro,<br><em>sotto controllo.</em></h1>
+        <p>Simula il sensore, invia tiri dal bersaglio e controlla la partita in tempo reale.</p>
+      </div>
+      <div class="intro-index" aria-hidden="true"><span>INTERFACCIA</span><strong>01<span>/</span>03</strong></div>
+    </section>
+
+    <section class="metrics grid gap-4" aria-label="Stato del simulatore">
+      <div class="metric-card">
+        <div class="metric-top flex items-center justify-between"><span>CONNESSIONE MQTT</span><span class="metric-symbol" aria-hidden="true">↗</span></div>
+        <div class="metric-main flex items-center gap-3"><span class="metric-led" aria-hidden="true"></span><strong id="stato-connessione" aria-live="polite">Verifica…</strong></div>
+        <span class="metric-caption">Collegamento al broker</span>
+      </div>
+      <div class="metric-card">
+        <div class="metric-top flex items-center justify-between"><span>BATTERIA SENSORE</span><span class="metric-symbol" aria-hidden="true">◈</span></div>
+        <div class="metric-main"><strong id="stato-batteria">—</strong></div>
+        <div class="battery-track" aria-hidden="true"><span id="batteria-livello"></span></div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-top flex items-center justify-between"><span>LOOP AUTOMATICO</span><span class="metric-symbol" aria-hidden="true">↻</span></div>
+        <div class="metric-main"><strong id="stato-esecuzione">Verifica…</strong></div>
+        <span class="metric-caption">Generazione periodica dei tiri</span>
+      </div>
+    </section>
+
+    <section class="workspace grid gap-5" aria-label="Controlli del simulatore">
+      <section class="target-card">
+        <div class="card-heading flex items-start justify-between gap-4">
+          <div><span class="panel-kicker">01 / INPUT MANUALE</span><h2>Bersaglio interattivo</h2></div>
+          <span class="panel-tag"><span class="signal-dot"></span> LIVE INPUT</span>
+        </div>
+        <div class="target-stage">
+          <span class="stage-corner stage-corner-top" aria-hidden="true">DH / 001</span>
+          <div id="bersaglio" aria-label="Bersaglio: seleziona una zona per inviare un tiro"></div>
+          <span class="stage-corner stage-corner-bottom" aria-hidden="true">PRECISION ENGINE</span>
+        </div>
+        <div class="target-bottom flex items-center justify-between gap-4">
+          <div><strong>Lancia una freccetta</strong><p>Tocca la freccetta per un tiro casuale nel cerchio, oppure seleziona una zona. Premi Spazio per ripetere l'ultimo settore selezionato.</p></div>
+          <button type="button" id="btn-lancia-freccetta" class="throw-button" aria-label="Lancia una freccetta casuale sul bersaglio" disabled>
+            <svg viewBox="0 0 64 64" aria-hidden="true" focusable="false">
+              <path d="M10 10 38 38" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
+              <path d="M8 8 18 12 12 18Z" fill="currentColor"/>
+              <path d="M33 37 33 20 47 31 54 54 31 47 20 33Z" fill="currentColor"/>
+            </svg>
+            <span>Lancia freccetta</span>
+          </button>
+        </div>
+        <div class="last-throw flex items-center justify-between gap-4"><span>ULTIMO TIRO MANUALE</span><strong id="ultimo-tiro">In attesa del primo tiro</strong></div>
+      </section>
+
+      <div class="control-column flex flex-col gap-5">
+        <section class="control-card">
+          <div class="card-heading"><span class="panel-kicker">02 / AUTOMAZIONE</span><h2>Imposta il ritmo</h2><p>Genera una sequenza di tiri senza usare il bersaglio manualmente.</p></div>
+          <div class="field-block">
+            <label for="select-scenario">Scenario di gioco</label>
+            <select id="select-scenario">
+              <option value="RANDOM">Casuale</option>
+              <option value="PARTITA_501">Partita 501</option>
+              <option value="SEQUENZA">Sequenza</option>
+            </select>
+          </div>
+          <div class="action-row grid gap-3">
+            <button type="button" id="btn-avvia" class="button-primary">Avvia loop <span aria-hidden="true">↗</span></button>
+            <button type="button" id="btn-ferma" class="button-secondary">Ferma</button>
+          </div>
+          <div class="control-divider"></div>
+          <div class="field-block">
+            <label for="input-velocita">Intervallo tra i tiri</label>
+            <div class="input-with-unit"><input type="number" id="input-velocita" min="50" step="50" value="2000"><span>MS</span></div>
+            <p class="field-help">2000 ms corrispondono a un tiro ogni 2 secondi.</p>
+          </div>
+          <button type="button" id="btn-velocita" class="button-outline">Applica velocità <span aria-hidden="true">→</span></button>
+        </section>
+
+        <section class="control-card fault-card">
+          <div class="card-heading"><span class="panel-kicker">03 / TEST DI RESILIENZA</span><h2>Simula un'interruzione</h2><p>Disconnetti temporaneamente il sensore per verificare il recupero offline.</p></div>
+          <div class="fault-controls grid gap-3">
+            <div class="field-block"><label for="input-disconnetti">Durata</label><div class="input-with-unit"><input type="number" id="input-disconnetti" min="1" value="10"><span>SEC</span></div></div>
+            <button type="button" id="btn-disconnetti" class="button-warning">Disconnetti <span aria-hidden="true">↗</span></button>
+          </div>
+        </section>
+
+        <div id="messaggio" role="status" aria-live="polite"></div>
+      </div>
+    </section>
+
+    <footer class="footer flex items-center justify-between"><span>DARTHUB / SENSOR SIMULATOR</span><span id="bersaglio-identificativo">Locale — · bersaglio —</span></footer>
+  </main>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

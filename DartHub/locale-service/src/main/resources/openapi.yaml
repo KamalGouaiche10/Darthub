@@ -1,0 +1,476 @@
+openapi: 3.0.3
+info:
+  title: locale-service
+  description: >
+    Locali, bersagli e dispositivi edge (ARCHITETTURA.md §5.2). Porta 7002.
+  version: 1.0.0
+servers:
+  - url: http://localhost:7002
+
+paths:
+  /locali:
+    get:
+      summary: Lista locali, paginata dopo i filtri ownerUserId/stato; il proprietario vede anche IN_ATTESA e RIFIUTATO
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { name: page, in: query, schema: { type: integer } }
+        - { name: size, in: query, schema: { type: integer } }
+        - { name: ownerUserId, in: query, schema: { type: integer, format: int64 } }
+        - { name: stato, in: query, schema: { type: string, enum: [APPROVATO, IN_ATTESA, RIFIUTATO] } }
+      responses:
+        '200': { description: Pagina di locali }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+    post:
+      summary: Crea un locale (PLATFORM_ADMIN oppure LOCALE_ADMIN)
+      description: PLATFORM_ADMIN assegna ownerUserId e crea un locale approvato; LOCALE_ADMIN può creare più locali, ciascuno IN_ATTESA, con ownerUserId ricavato dal token anche se l'account è già approvato.
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateLocaleRequest' }
+      responses:
+        '201':
+          description: Locale creato
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Locale' }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+
+  /locali/{id}:
+    get:
+      summary: Dettaglio locale (IN_ATTESA/RIFIUTATO solo al proprietario o a PLATFORM_ADMIN)
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/LocaleId' } ]
+      responses:
+        '200':
+          description: Locale
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Locale' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+
+    put:
+      summary: Aggiorna il locale (owner oppure PLATFORM_ADMIN)
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/LocaleId' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateLocaleRequest' }
+      responses:
+        '200':
+          description: Locale aggiornato
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Locale' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+    delete:
+      summary: Elimina il locale (owner oppure PLATFORM_ADMIN)
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/LocaleId' } ]
+      responses:
+        '204': { description: Eliminato }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+
+  /locali/{id}/stato:
+    patch:
+      summary: Approva o rifiuta un locale (PLATFORM_ADMIN)
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/LocaleId' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [stato]
+              properties:
+                stato: { type: string, enum: [APPROVATO, IN_ATTESA, RIFIUTATO] }
+      responses:
+        '200':
+          description: Locale aggiornato
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Locale' }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+
+  /locali/{id}/partite-attive:
+    get:
+      summary: Partite in corso nel locale (interroga match-service; fallback se irraggiungibile)
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/LocaleId' } ]
+      responses:
+        '200': { description: 'Lista delle partite attive, o lista vuota con avvisoServizioNonRaggiungibile=true' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+
+  /locali/{localeId}/bersagli:
+    get:
+      summary: Bersagli del locale (se non approvato, solo al proprietario o a PLATFORM_ADMIN)
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - name: localeId
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        '200': { description: Pagina di bersagli }
+    post:
+      summary: Crea uno dei bersagli nel locale indicato (gestore proprietario oppure PLATFORM_ADMIN)
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - name: localeId
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateDartboardRequest' }
+      responses:
+        '201':
+          description: Bersaglio creato
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Dartboard' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '409': { $ref: '#/components/responses/ConflictError' }
+
+  /bersagli/{id}:
+    get:
+      summary: Dettaglio bersaglio (se il locale non è approvato, solo al proprietario o a PLATFORM_ADMIN)
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/DartboardId' } ]
+      responses:
+        '200':
+          description: Bersaglio
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Dartboard' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+    put:
+      summary: Aggiorna il bersaglio (owner oppure PLATFORM_ADMIN)
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/DartboardId' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateDartboardRequest' }
+      responses:
+        '200': { description: Bersaglio aggiornato }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '409': { $ref: '#/components/responses/ConflictError' }
+    delete:
+      summary: Elimina il bersaglio (owner oppure PLATFORM_ADMIN)
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/DartboardId' } ]
+      responses:
+        '204': { description: Eliminato }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+
+  /bersagli/{id}/stato:
+    patch:
+      summary: Cambia stato del bersaglio (owner oppure PLATFORM_ADMIN)
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/DartboardId' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetDartboardStatusRequest' }
+      responses:
+        '200': { description: Stato aggiornato }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+
+  /edge-devices/register:
+    post:
+      summary: Registra un dispositivo edge (owner oppure PLATFORM_ADMIN); emette un token EDGE_DEVICE
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterEdgeDeviceRequest' }
+      responses:
+        '201':
+          description: Dispositivo registrato
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RegisterEdgeDeviceResponse' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+
+  /edge-devices/bersagli/{id}/prenota:
+    post:
+      summary: Prenota un bersaglio per una partita (token SERVICE)
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/DartboardId' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [localeId, gameTypeId]
+              properties:
+                localeId: { type: integer, format: int64 }
+                gameTypeId: { type: integer, format: int64 }
+      responses:
+        '204': { description: Bersaglio prenotato }
+        '400': { description: Identificativi obbligatori mancanti o non validi }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+
+  /edge-devices:
+    get:
+      summary: Lista dispositivi edge, filtro opzionale per locale
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { name: localeId, in: query, schema: { type: integer, format: int64 } }
+        - { name: page, in: query, schema: { type: integer } }
+        - { name: size, in: query, schema: { type: integer } }
+      responses:
+        '200': { description: Pagina di dispositivi }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+
+  /edge-devices/{id}:
+    get:
+      summary: Dettaglio dispositivo edge
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/EdgeDeviceId' } ]
+      responses:
+        '200':
+          description: Dispositivo
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EdgeDevice' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+    delete:
+      summary: Revoca il token e cancella il dispositivo
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/EdgeDeviceId' } ]
+      responses:
+        '204': { description: Revocato }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+
+  /edge-devices/{id}/stato:
+    get:
+      summary: Stato corrente del dispositivo
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/EdgeDeviceId' } ]
+      responses:
+        '200':
+          description: Stato
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EdgeDeviceStatus' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+
+  /edge-devices/{id}/config:
+    put:
+      summary: Aggiorna la configurazione (pubblicata retained su MQTT)
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/EdgeDeviceId' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EdgeConfig' }
+      responses:
+        '200':
+          description: Configurazione aggiornata
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EdgeDevice' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+
+  /health:
+    get:
+      summary: Stato del servizio
+      security: []
+      responses:
+        '200':
+          description: Stato
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Health' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    LocaleId:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
+    DartboardId:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
+    EdgeDeviceId:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
+
+  responses:
+    UnauthorizedError:
+      description: Token assente, scaduto o non valido
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+    ForbiddenError:
+      description: Ruolo insufficiente o locale non di proprietà (NON_PROPRIETARIO)
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+    NotFoundError:
+      description: Risorsa inesistente
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+    ConflictError:
+      description: Identificativo bersaglio già presente nel locale (DARTBOARD_DUPLICATO)
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        timestamp: { type: string, format: date-time }
+        status: { type: integer }
+        codice: { type: string }
+        messaggio: { type: string }
+        path: { type: string }
+
+    CreateLocaleRequest:
+      type: object
+      required: [nome, tipo]
+      description: ownerUserId e obbligatorio per PLATFORM_ADMIN; per LOCALE_ADMIN viene ricavato dal token.
+      properties:
+        nome: { type: string }
+        indirizzo: { type: string, nullable: true }
+        tipo: { type: string, enum: [PUBBLICO, PRIVATO] }
+        ownerUserId: { type: integer, format: int64 }
+
+    UpdateLocaleRequest:
+      type: object
+      properties:
+        nome: { type: string, nullable: true }
+        indirizzo: { type: string, nullable: true }
+        tipo: { type: string, enum: [PUBBLICO, PRIVATO], nullable: true }
+
+    Locale:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        nome: { type: string }
+        indirizzo: { type: string, nullable: true }
+        tipo: { type: string, enum: [PUBBLICO, PRIVATO] }
+        ownerUserId: { type: integer, format: int64 }
+        stato: { type: string, enum: [APPROVATO, IN_ATTESA, RIFIUTATO] }
+        createdAt: { type: string, format: date-time }
+
+    CreateDartboardRequest:
+      type: object
+      required: [identificativoLocale, gameTypeId]
+      properties:
+        identificativoLocale: { type: string }
+        gameTypeId: { type: integer, format: int64 }
+
+    UpdateDartboardRequest:
+      type: object
+      properties:
+        identificativoLocale: { type: string, nullable: true }
+        gameTypeId: { type: integer, format: int64, nullable: true }
+
+    SetDartboardStatusRequest:
+      type: object
+      required: [stato]
+      properties:
+        stato: { type: string, enum: [DISPONIBILE, IN_USO, MANUTENZIONE, OFFLINE] }
+
+    Dartboard:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        localeId: { type: integer, format: int64 }
+        identificativoLocale: { type: string }
+        gameTypeId: { type: integer, format: int64 }
+        stato: { type: string, enum: [DISPONIBILE, IN_USO, MANUTENZIONE, OFFLINE] }
+        createdAt: { type: string, format: date-time }
+        prenotabile:
+          type: boolean
+          description: Vero quando il bersaglio è DISPONIBILE e l'edge è ONLINE con heartbeat entro la soglia configurata.
+        statoEdge:
+          type: string
+          enum: [ASSENTE, ONLINE, OFFLINE]
+          description: Stato di connessione del dispositivo edge associato.
+
+    RegisterEdgeDeviceRequest:
+      type: object
+      required: [dartboardId, serialNumber]
+      properties:
+        dartboardId: { type: integer, format: int64 }
+        serialNumber: { type: string }
+        intervalloHeartbeatS: { type: integer, nullable: true }
+        sogliaOfflineS: { type: integer, nullable: true }
+        qos: { type: integer, enum: [0, 1, 2], nullable: true }
+        urlBrokerLocale: { type: string, nullable: true }
+
+    RegisterEdgeDeviceResponse:
+      type: object
+      properties:
+        deviceId: { type: integer, format: int64 }
+        token: { type: string }
+        config: { $ref: '#/components/schemas/EdgeConfig' }
+
+    EdgeConfig:
+      type: object
+      required: [intervalloHeartbeatS, sogliaOfflineS, qos]
+      properties:
+        intervalloHeartbeatS: { type: integer }
+        sogliaOfflineS: { type: integer }
+        qos: { type: integer, enum: [0, 1, 2] }
+        urlBrokerLocale: { type: string, nullable: true }
+
+    EdgeDevice:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        dartboardId: { type: integer, format: int64 }
+        localeId: { type: integer, format: int64 }
+        serialNumber: { type: string }
+        intervalloHeartbeatS: { type: integer }
+        sogliaOfflineS: { type: integer }
+        qos: { type: integer }
+        urlBrokerLocale: { type: string, nullable: true }
+        ultimoHeartbeat: { type: string, format: date-time, nullable: true }
+        tiriInCoda: { type: integer }
+        stato: { type: string, enum: [ONLINE, OFFLINE] }
+        deviceUserId: { type: integer, format: int64, nullable: true }
+
+    EdgeDeviceStatus:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        stato: { type: string, enum: [ONLINE, OFFLINE] }
+        ultimoHeartbeat: { type: string, format: date-time, nullable: true }
+        tiriInCoda: { type: integer }
+
+    Health:
+      type: object
+      properties:
+        servizio: { type: string }
+        versione: { type: string }
+        uptimeS: { type: integer, format: int64 }
+        database: { type: string, enum: [OK, KO] }
+        mqtt: { type: string, enum: [CONNESSO, DISCONNESSO] }

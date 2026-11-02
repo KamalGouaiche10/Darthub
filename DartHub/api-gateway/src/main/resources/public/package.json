@@ -1,0 +1,11 @@
+{
+  "private": true,
+  "scripts": {
+    "build:css": "tailwindcss -i ./css/tailwind.source.css -o ./css/tailwind.css --minify && node -e \"require('node:fs').copyFileSync('./css/tailwind.css', '../../../../../sensor-simulator/src/main/resources/simulatore-web/css/tailwind.css')\"",
+    "watch:css": "tailwindcss -i ./css/tailwind.source.css -o ./css/tailwind.css --watch"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.1.0",
+    "tailwindcss": "^4.1.0"
+  }
+}

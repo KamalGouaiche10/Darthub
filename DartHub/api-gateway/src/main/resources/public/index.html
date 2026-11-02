@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#080d12">
+<meta name="description" content="DartHub: partite, bersagli, tornei e statistiche in un'unica arena digitale.">
+<title>DartHub — La tua arena digitale</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="stylesheet" href="css/tailwind.css">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="banner-offline" role="status" hidden>⚠️ Sei offline: alcune funzioni potrebbero non essere disponibili.</div>
+<header id="barra-superiore">
+  <a id="logo" href="#/bersagli" aria-label="DartHub, torna alla pagina principale">
+    <span class="logo-mark" aria-hidden="true"><span></span></span>
+    <span>Dart<span class="logo-accent">Hub</span><small>PLAY THE MOMENT</small></span>
+  </a>
+  <nav id="menu" aria-label="Navigazione principale"></nav>
+  <div id="area-utente"></div>
+</header>
+<main id="app" aria-live="polite"></main>
+<div id="notifiche" aria-live="assertive"></div>
+
+<script src="lib/paho-mqtt.js"></script>
+<script type="module">
+  import { Router } from './js/router.js';
+  import { avviaBannerConnessione } from './js/connectionBanner.js';
+  avviaBannerConnessione();
+  Router.avvia();
+</script>
+<script>
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => navigator.serviceWorker.register("/sw.js", { updateViaCache: "none" }));
+  }
+</script>
+</body>
+</html>

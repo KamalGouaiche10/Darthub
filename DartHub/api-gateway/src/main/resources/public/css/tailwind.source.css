@@ -1,0 +1,10 @@
+@import "tailwindcss" source("../");
+@source "../../../../../../sensor-simulator/src/main/resources/simulatore-web";
+
+@theme {
+  --color-ink: #080d12;
+  --color-panel: #111a20;
+  --color-lime: #c7f36b;
+  --color-mist: #96a5a9;
+  --font-display: "Segoe UI", "Inter", Arial, sans-serif;
+}

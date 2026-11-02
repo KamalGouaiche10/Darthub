@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DartHub - Monitor bersaglio</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #0b1020;
+    color: #f5f5f5;
+    font-family: "Segoe UI", Arial, sans-serif;
+    min-height: 100vh;
+    min-height: 100dvh;
+    padding: clamp(1rem, 4vw, 2rem);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+  h1 { font-size: 2rem; margin-bottom: 0.2em; color: #ffcc00; }
+  #stato-vuoto { font-size: 1.5rem; color: #888; }
+  #contenuto { max-width: 100%; overflow-x: auto; }
+  table { border-collapse: collapse; font-size: clamp(1.1rem, 5vw, 2.2rem); margin-top: 1em; }
+  td, th { padding: 0.4em clamp(0.5em, 3vw, 1.2em); text-align: left; }
+  tr.attivo { background: #1e3a5f; border-radius: 8px; }
+  tr.attivo td:first-child::before { content: "▶ "; color: #ffcc00; }
+  .punteggio { font-weight: bold; text-align: right; }
+  #turno-corrente { font-size: 1.2rem; color: #ffcc00; }
+  #storico { width: min(100%, 900px); margin-top: 1.5rem; }
+  #storico h2 { margin-bottom: 0.3rem; }
+  #storico-scroll { max-height: 32vh; overflow: auto; }
+  #tabella-storico { width: 100%; font-size: 0.95rem; margin-top: 0; }
+  #tabella-storico td, #tabella-storico th { padding: 0.35rem 0.5rem; }
+  #form-nuova { width: min(100%, 540px); margin-top: 2em; font-size: 1rem; color: #ccc; }
+  #form-nuova input { width: 100%; min-height: 44px; margin: 0.25em 0; padding: 0.5em; border: 1px solid #506080; border-radius: 8px; background: #151e31; color: #fff; font: inherit; }
+  #form-nuova button { min-height: 44px; margin: 0.4em 0.3em 0 0; padding: 0.5em 0.8em; border: 0; border-radius: 8px; background: #ffcc00; color: #111; font: inherit; font-weight: 700; cursor: pointer; }
+  #form-nuova button:focus-visible, #form-nuova input:focus-visible { outline: 3px solid #ffcc00; outline-offset: 2px; }
+  #messaggio { min-height: 1.5em; margin: 0.8em 0 0; color: #ff9b9b; }
+  #messaggio:empty { display: none; }
+</style>
+</head>
+<body>
+  <h1>DartHub</h1>
+  <div id="contenuto">
+    <div id="stato-vuoto">Nessuna partita in corso</div>
+    <p id="turno-corrente" hidden></p>
+    <table id="tabella-punteggi" style="display:none;">
+      <tbody id="corpo-tabella"></tbody>
+    </table>
+  </div>
+
+  <section id="storico" aria-label="Storico dei tiri" hidden>
+    <h2>Storico dei tiri</h2>
+    <div id="storico-scroll">
+      <table id="tabella-storico">
+        <thead><tr><th>Turno</th><th>Giocatore</th><th>Tiro</th><th>Punti</th><th>Esito</th></tr></thead>
+        <tbody id="corpo-storico"></tbody>
+      </table>
+    </div>
+    <p id="storico-vuoto">Nessun tiro in questa partita.</p>
+  </section>
+
+  <div id="form-nuova">
+    <div id="righe-partecipanti">
+      <div><input type="text" class="nome-partecipante" aria-label="Nome giocatore 1" placeholder="Nome giocatore 1"></div>
+      <div><input type="text" class="nome-partecipante" aria-label="Nome giocatore 2" placeholder="Nome giocatore 2"></div>
+    </div>
+    <label for="token-admin">Token amministrativo del display</label>
+    <input id="token-admin" type="password" autocomplete="off" placeholder="Token amministrativo">
+    <button type="button" onclick="aggiungiRiga()">+ Giocatore</button>
+    <button type="button" onclick="avviaPartita()">Avvia partita locale</button>
+    <button type="button" onclick="chiudiPartita()">Chiudi partita</button>
+    <p id="messaggio" role="status" aria-live="polite"></p>
+  </div>
+
+<script>
+async function aggiornaStato() {
+  try {
+    const risposta = await fetch('/display/punteggio');
+    const stato = await risposta.json();
+    const vuoto = document.getElementById('stato-vuoto');
+    const tabella = document.getElementById('tabella-punteggi');
+    const corpo = document.getElementById('corpo-tabella');
+    const turno = document.getElementById('turno-corrente');
+    const storico = document.getElementById('storico');
+    if (!stato.inCorso) {
+      vuoto.style.display = 'block';
+      tabella.style.display = 'none';
+      turno.hidden = true;
+      storico.hidden = true;
+      return;
+    }
+    vuoto.style.display = 'none';
+    tabella.style.display = 'table';
+    storico.hidden = false;
+    corpo.innerHTML = '';
+    for (const p of stato.partecipanti) {
+      const riga = document.createElement('tr');
+      if (p.participantId === stato.partecipanteAttivoId) {
+        riga.className = 'attivo';
+      }
+      const nome = document.createElement('td');
+      nome.textContent = p.nome;
+      const punteggio = document.createElement('td');
+      punteggio.className = 'punteggio';
+      punteggio.textContent = p.punteggioCorrente;
+      riga.append(nome, punteggio);
+      corpo.appendChild(riga);
+    }
+    const attivo = stato.partecipanti.find(p => p.participantId === stato.partecipanteAttivoId);
+    turno.textContent = attivo ? `Turno ${stato.numeroTurno} — ${attivo.nome}` : 'Turno non disponibile';
+    turno.hidden = false;
+
+    const corpoStorico = document.getElementById('corpo-storico');
+    corpoStorico.replaceChildren();
+    const tiri = stato.storicoTiri || [];
+    document.getElementById('tabella-storico').hidden = tiri.length === 0;
+    document.getElementById('storico-vuoto').hidden = tiri.length > 0;
+    for (const tiro of tiri) {
+      const riga = document.createElement('tr');
+      for (const valore of [tiro.numeroTurno, tiro.giocatore,
+        `${tiro.moltiplicatore} ${tiro.settore}`, tiro.punti, tiro.esito]) {
+        const cella = document.createElement('td');
+        cella.textContent = valore;
+        riga.appendChild(cella);
+      }
+      corpoStorico.appendChild(riga);
+    }
+  } catch (e) {
+    console.error('Aggiornamento stato fallito', e);
+  }
+}
+
+function aggiungiRiga() {
+  const div = document.createElement('div');
+  const input = document.createElement('input');
+  const numero = document.querySelectorAll('.nome-partecipante').length + 1;
+  input.type = 'text';
+  input.className = 'nome-partecipante';
+  input.setAttribute('aria-label', `Nome giocatore ${numero}`);
+  input.placeholder = `Nome giocatore ${numero}`;
+  div.appendChild(input);
+  document.getElementById('righe-partecipanti').appendChild(div);
+}
+
+function tokenDisplay() {
+  const campo = document.getElementById('token-admin');
+  const token = campo.value.trim();
+  if (!token) {
+    mostraMessaggio('Inserisci il token amministrativo del display.');
+    campo.focus();
+    return null;
+  }
+  sessionStorage.setItem('displayAdminToken', token);
+  return token;
+}
+
+function mostraMessaggio(testo) {
+  document.getElementById('messaggio').textContent = testo;
+}
+
+function tokenNonValido() {
+  sessionStorage.removeItem('displayAdminToken');
+  const campo = document.getElementById('token-admin');
+  campo.value = '';
+  campo.focus();
+}
+
+async function avviaPartita() {
+  const token = tokenDisplay();
+  if (!token) return;
+  const nomi = Array.from(document.querySelectorAll('.nome-partecipante'))
+      .map(i => i.value.trim()).filter(n => n.length > 0);
+  if (nomi.length === 0) {
+    mostraMessaggio('Inserisci almeno un nome.');
+    return;
+  }
+  const partecipanti = nomi.map(nome => ({ playerId: null, nomeVisualizzato: nome }));
+  try {
+    const risposta = await fetch('/display/partite', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Display-Token': token },
+      body: JSON.stringify({ partecipanti })
+    });
+    if (!risposta.ok) {
+      if (risposta.status === 401) tokenNonValido();
+      const errore = await risposta.json().catch(() => ({}));
+      mostraMessaggio('Avvio partita fallito: ' + (errore.messaggio || risposta.status));
+      return;
+    }
+    mostraMessaggio('Partita avviata.');
+    aggiornaStato();
+  } catch {
+    mostraMessaggio('Connessione non disponibile. Riprova.');
+  }
+}
+
+async function chiudiPartita() {
+  const token = tokenDisplay();
+  if (!token) return;
+  try {
+    const risposta = await fetch('/display/partite/chiudi', {
+      method: 'POST', headers: { 'X-Display-Token': token }
+    });
+    if (!risposta.ok && risposta.status !== 204) {
+      if (risposta.status === 401) tokenNonValido();
+      mostraMessaggio('Chiusura partita fallita: ' + risposta.status);
+      return;
+    }
+    mostraMessaggio('Partita chiusa.');
+    aggiornaStato();
+  } catch {
+    mostraMessaggio('Connessione non disponibile. Riprova.');
+  }
+}
+
+document.getElementById('token-admin').value = sessionStorage.getItem('displayAdminToken') || '';
+setInterval(aggiornaStato, 1000);
+aggiornaStato();
+</script>
+</body>
+</html>

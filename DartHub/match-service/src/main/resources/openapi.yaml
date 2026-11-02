@@ -1,0 +1,494 @@
+openapi: 3.0.3
+info:
+  title: match-service
+  description: >
+    Nucleo del sistema: partite, tiri, punteggi, sincronizzazione offline (ARCHITETTURA.md §5.4).
+    Porta 7004.
+  version: 1.0.0
+servers:
+  - url: http://localhost:7004
+
+paths:
+  /partite/{id}/avvia-torneo:
+    post:
+      summary: Avvio della partita di torneo da scheduler (SERVICE)
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/MatchId' } ]
+      responses:
+        '200': { description: Partita in corso }
+  /partite/{id}/assenza:
+    post:
+      summary: Registra vittoria a tavolino o doppia assenza in modo idempotente (SERVICE)
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/MatchId' } ]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                winnerPlayerId: { type: integer, format: int64, nullable: true }
+      responses:
+        '200': { description: Risultato persistito }
+  /partite/{id}/esito-torneo:
+    get:
+      summary: Evento di completamento ricostruito per la classifica (SERVICE)
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/MatchId' } ]
+      responses:
+        '200': { description: Risultati della partita }
+  /partite/{id}/bersaglio/punteggio:
+    get:
+      summary: Punteggio condiviso con verifica di partecipazione e finestra del link (PLAYER)
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/MatchId' } ]
+      responses:
+        '200': { description: Punteggio della stessa partita }
+        '403': { description: Accesso non autorizzato }
+  /partite/{id}/bersaglio/tiri:
+    post:
+      summary: Tiro dal bersaglio virtuale con verifica di identità, partita e turno (PLAYER)
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/MatchId' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [settore, moltiplicatore]
+              properties:
+                settore: { type: string }
+                moltiplicatore: { type: string }
+      responses:
+        '202': { description: Tiro accettato }
+        '403': { description: Accesso non autorizzato }
+        '409': { description: Partita non in corso o turno dell'avversario }
+  /partite:
+    post:
+      summary: Crea una partita (PLAYER, stato CREATA)
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateMatchRequest' } } }
+      responses:
+        '201': { description: Partita creata, content: { application/json: { schema: { $ref: '#/components/schemas/Match' } } } }
+    get:
+      summary: Lista partite, filtri playerId/localeId/stato/dal/al (PLAYER, LOCALE_ADMIN)
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { name: playerId, in: query, schema: { type: integer, format: int64 } }
+        - { name: localeId, in: query, schema: { type: integer, format: int64 } }
+        - { name: stato, in: query, schema: { type: string, enum: [CREATA, IN_CORSO, COMPLETATA, SINCRONIZZATA, ANNULLATA] } }
+        - { name: dal, in: query, schema: { type: string, format: date-time } }
+        - { name: al, in: query, schema: { type: string, format: date-time } }
+        - { name: page, in: query, schema: { type: integer } }
+        - { name: size, in: query, schema: { type: integer } }
+      responses:
+        '200': { description: Pagina di partite }
+
+  /partite/{id}:
+    get:
+      summary: Dettaglio partita
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/MatchId' } ]
+      responses:
+        '200': { description: Partita, content: { application/json: { schema: { $ref: '#/components/schemas/Match' } } } }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+    delete:
+      summary: Annulla la partita (creatore o LOCALE_ADMIN)
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/MatchId' } ]
+      responses:
+        '200': { description: Partita annullata }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '409': { $ref: '#/components/responses/ConflictError' }
+
+  /partite/{id}/punteggio:
+    get:
+      summary: Punteggio corrente; per le partite di torneo accesso diretto solo SERVICE
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/MatchId' } ]
+      responses:
+        '200': { description: Punteggio, content: { application/json: { schema: { $ref: '#/components/schemas/Score' } } } }
+
+  /partite/{id}/avvia:
+    post:
+      summary: Avvia la partita (PLAYER); pubblica START_MATCH con il roster
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/MatchId' } ]
+      responses:
+        '200': { description: Partita avviata }
+        '409': { $ref: '#/components/responses/ConflictError' }
+        '422': { $ref: '#/components/responses/BusinessRuleError' }
+
+  /partite/{id}/fine:
+    post:
+      summary: Chiude manualmente la partita (PLAYER); vince il miglior punteggio residuo
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/MatchId' } ]
+      responses:
+        '200': { description: Partita completata }
+        '409': { $ref: '#/components/responses/ConflictError' }
+
+  /partite/{id}/partecipanti:
+    post:
+      summary: Aggiunge un partecipante (PLAYER)
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/MatchId' } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/AddParticipantRequest' } } }
+      responses:
+        '201': { description: Partecipante aggiunto, content: { application/json: { schema: { $ref: '#/components/schemas/Participant' } } } }
+        '422': { $ref: '#/components/responses/BusinessRuleError' }
+
+  /partite/{id}/partecipanti/{pid}:
+    delete:
+      summary: Rimuove un partecipante (PLAYER)
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { $ref: '#/components/parameters/MatchId' }
+        - { name: pid, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '204': { description: Rimosso }
+
+  /partite/{id}/tiri:
+    get:
+      summary: Lista tiri paginata; nei tornei solo partecipanti autenticati
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/MatchId' } ]
+      responses:
+        '200': { description: Pagina di tiri }
+    post:
+      summary: Registra un tiro — fallback REST all'MQTT (EDGE_DEVICE, solo sul proprio bersaglio)
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/MatchId' } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateThrowRequest' } } }
+      responses:
+        '202': { description: Tiro accettato }
+        '200': { description: Tiro scartato (fuori turno o partita non IN_CORSO) }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+
+  /partite/{id}/roster:
+    get:
+      summary: Roster della partita (EDGE_DEVICE sul proprio bersaglio oppure SERVICE)
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/MatchId' } ]
+      responses:
+        '200': { description: Roster }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+
+  /partite/sync-offline:
+    post:
+      summary: Sincronizza i tiri bufferizzati di una partita già esistente (EDGE_DEVICE)
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/OfflineBatch' } } }
+      responses:
+        '200': { description: Risultato della sincronizzazione, content: { application/json: { schema: { $ref: '#/components/schemas/SyncResult' } } } }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+
+  /partite/import-offline:
+    post:
+      summary: Importa una partita nata offline, idempotente su localUuid (EDGE_DEVICE)
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ImportOfflineRequest' } } }
+      responses:
+        '200': { description: Partita importata (o già esistente), content: { application/json: { schema: { $ref: '#/components/schemas/Match' } } } }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+
+  /squadre:
+    get:
+      summary: Lista squadre (PLAYER)
+      security: [ { bearerAuth: [] } ]
+      responses:
+        '200': { description: Pagina di squadre }
+    post:
+      summary: Crea una squadra (PLAYER)
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateTeamRequest' } } }
+      responses:
+        '201': { description: Squadra creata, content: { application/json: { schema: { $ref: '#/components/schemas/Team' } } } }
+
+  /squadre/{id}:
+    get:
+      summary: Dettaglio squadra
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/TeamId' } ]
+      responses:
+        '200': { description: Squadra }
+    put:
+      summary: Aggiorna una squadra
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/TeamId' } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateTeamRequest' } } }
+      responses:
+        '200': { description: Squadra aggiornata }
+    delete:
+      summary: Elimina una squadra
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/TeamId' } ]
+      responses:
+        '204': { description: Eliminata }
+
+  /squadre/{id}/membri:
+    post:
+      summary: Aggiunge un membro alla squadra
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/TeamId' } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/AddTeamMemberRequest' } } }
+      responses:
+        '204': { description: Aggiunto }
+        '409': { $ref: '#/components/responses/ConflictError' }
+
+  /squadre/{id}/membri/{playerId}:
+    delete:
+      summary: Rimuove un membro dalla squadra
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { $ref: '#/components/parameters/TeamId' }
+        - { name: playerId, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '204': { description: Rimosso }
+
+  /health:
+    get:
+      summary: Stato del servizio
+      security: []
+      responses:
+        '200': { description: Stato, content: { application/json: { schema: { $ref: '#/components/schemas/Health' } } } }
+
+  /partite/{id}/ripubblica-esito:
+    post:
+      summary: Ripubblica il risultato di una partita conclusa o sincronizzata
+      description: Solo SERVICE; non modifica il punteggio. Pubblica nuovamente l evento di esito.
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '204': { description: Esito ripubblicato }
+        '401': { description: Token assente o non valido }
+        '403': { description: Ruolo SERVICE richiesto }
+        '404': { description: Partita non trovata }
+        '409': { description: Partita non conclusa o sincronizzata }
+  /partite/{id}/bozza:
+    delete:
+      summary: Annulla una bozza creata dal chiamante
+      description: Solo PLAYER creatore; la partita deve essere CREATA.
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '200': { description: Partita annullata }
+        '401': { description: Token assente o non valido }
+        '403': { description: Ruolo o proprieta non consentiti }
+        '404': { description: Partita non trovata }
+        '409': { description: Stato incompatibile }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  parameters:
+    MatchId: { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    TeamId: { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+
+  responses:
+    ForbiddenError:
+      description: Ruolo insufficiente, o EDGE_DEVICE su un bersaglio non proprio
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+    NotFoundError:
+      description: Risorsa inesistente
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+    ConflictError:
+      description: Transizione di stato non ammessa
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+    BusinessRuleError:
+      description: Regola di dominio violata (es. partita senza partecipanti)
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        timestamp: { type: string, format: date-time }
+        status: { type: integer }
+        codice: { type: string }
+        messaggio: { type: string }
+        path: { type: string }
+
+    CreateMatchRequest:
+      type: object
+      required: [dartboardId, localeId, gameTypeId, scoringRuleId, modalita]
+      properties:
+        dartboardId: { type: integer, format: int64 }
+        localeId: { type: integer, format: int64 }
+        gameTypeId: { type: integer, format: int64 }
+        scoringRuleId: { type: integer, format: int64 }
+        modalita: { type: string, enum: [INDIVIDUALE, SQUADRA] }
+        idempotencyKey: { type: string, nullable: true, description: "Solo SERVICE; chiave stabile per partite di torneo" }
+
+    Match:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        dartboardId: { type: integer, format: int64 }
+        localeId: { type: integer, format: int64 }
+        gameTypeId: { type: integer, format: int64 }
+        scoringRuleId: { type: integer, format: int64 }
+        modalita: { type: string, enum: [INDIVIDUALE, SQUADRA] }
+        stato: { type: string, enum: [CREATA, IN_CORSO, COMPLETATA, SINCRONIZZATA, ANNULLATA] }
+        createdBy: { type: integer, format: int64 }
+        localUuid: { type: string, nullable: true }
+        clockOffsetMs: { type: integer, format: int64 }
+        dataInizio: { type: string, format: date-time, nullable: true }
+        dataFine: { type: string, format: date-time, nullable: true }
+
+    AddParticipantRequest:
+      type: object
+      properties:
+        playerId: { type: integer, format: int64, nullable: true }
+        teamId: { type: integer, format: int64, nullable: true }
+
+    Participant:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        matchId: { type: integer, format: int64 }
+        playerId: { type: integer, format: int64, nullable: true }
+        teamId: { type: integer, format: int64, nullable: true }
+        ordineTurno: { type: integer }
+        punteggioCorrente: { type: integer }
+        ritirato: { type: boolean }
+
+    Score:
+      type: object
+      properties:
+        matchId: { type: integer, format: int64 }
+        stato: { type: string }
+        partecipanteAttivoId: { type: integer, format: int64, nullable: true }
+        punteggi:
+          type: array
+          items:
+            type: object
+            properties:
+              participantId: { type: integer, format: int64 }
+              playerId: { type: integer, format: int64, nullable: true }
+              teamId: { type: integer, format: int64, nullable: true }
+              nomeSquadra: { type: string, nullable: true, description: Nome della squadra; null nelle partite individuali }
+              ordineTurno: { type: integer }
+              punteggioCorrente: { type: integer }
+              ritirato: { type: boolean }
+
+    CreateThrowRequest:
+      type: object
+      required: [participantId, tipo, payload]
+      description: >-
+        Generico per qualunque motore di gioco: tipo è "TIRO" per le freccette
+        (payload={settore,moltiplicatore}); un motore diverso userebbe altri valori di tipo
+        con il proprio payload.
+      properties:
+        participantId: { type: integer, format: int64 }
+        tipo: { type: string, example: TIRO }
+        payload:
+          type: object
+          example: { settore: S20, moltiplicatore: TRIPLE }
+        timestampSensore: { type: string, format: date-time, nullable: true }
+
+    OfflineBatch:
+      type: object
+      required: [dartboardId, matchId, tiri]
+      properties:
+        dartboardId: { type: integer, format: int64 }
+        matchId: { type: integer, format: int64 }
+        clockOffsetMs: { type: integer, format: int64, nullable: true }
+        tiri:
+          type: array
+          items: { $ref: '#/components/schemas/ThrowBatchItem' }
+
+    ThrowBatchItem:
+      type: object
+      properties:
+        participantId: { type: integer, format: int64 }
+        settore: { type: string }
+        moltiplicatore: { type: string }
+        timestampSensore: { type: string, format: date-time }
+
+    SyncResult:
+      type: object
+      properties:
+        accettati: { type: integer }
+        scartati: { type: integer }
+        matchId: { type: integer, format: int64 }
+        statoFinale: { type: string }
+
+    ImportOfflineRequest:
+      type: object
+      required: [localUuid, dartboardId, localeId, gameTypeId, scoringRule, partecipanti, tiri]
+      properties:
+        localUuid: { type: string }
+        dartboardId: { type: integer, format: int64 }
+        localeId: { type: integer, format: int64 }
+        gameTypeId: { type: integer, format: int64 }
+        clockOffsetMs: { type: integer, format: int64, nullable: true }
+        scoringRule:
+          type: object
+          properties:
+            variante: { type: string }
+            direzione: { type: string, enum: [DECRESCENTE, CRESCENTE] }
+            punteggioIniziale: { type: integer }
+            punteggioObiettivo: { type: integer }
+            chiusuraDouble: { type: boolean }
+            bustAnnullaTurno: { type: boolean }
+            maxTiriPerTurno: { type: integer }
+        partecipanti:
+          type: array
+          items:
+            type: object
+            properties:
+              playerId: { type: integer, format: int64, nullable: true }
+              nomeVisualizzato: { type: string }
+              ordineTurno: { type: integer }
+        tiri:
+          type: array
+          items: { $ref: '#/components/schemas/ThrowBatchItem' }
+
+    CreateTeamRequest:
+      type: object
+      required: [nome]
+      properties:
+        nome: { type: string }
+
+    Team:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        nome: { type: string }
+        membri: { type: array, items: { type: integer, format: int64 } }
+
+    AddTeamMemberRequest:
+      type: object
+      required: [playerId]
+      properties:
+        playerId: { type: integer, format: int64 }
+
+    Health:
+      type: object
+      properties:
+        servizio: { type: string }
+        versione: { type: string }
+        uptimeS: { type: integer, format: int64 }
+        database: { type: string, enum: [OK, KO] }
+        mqtt: { type: string, enum: [CONNESSO, DISCONNESSO] }

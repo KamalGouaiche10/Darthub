@@ -1,0 +1,464 @@
+openapi: 3.0.3
+info:
+  title: tournament-service
+  description: >
+    Tornei, iscrizioni, calendario, classifiche (ARCHITETTURA.md §5.5). Porta 7005.
+  version: 1.0.0
+servers:
+  - url: http://localhost:7005
+
+paths:
+  /tornei/{id}/partite:
+    get:
+      summary: Partite generate del torneo (GAME_ADMIN o PLATFORM_ADMIN)
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/TournamentId' } ]
+      responses:
+        '200': { description: Partite con abbinamento e locale }
+  /tornei/{id}/partite/{matchId}/orario:
+    put:
+      summary: Imposta o corregge l'orario UTC prima dell'accettazione di entrambi
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { $ref: '#/components/parameters/TournamentId' }
+        - { name: matchId, in: path, required: true, schema: { type: integer, format: int64 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [scheduledAt]
+              properties:
+                scheduledAt: { type: string, format: date-time, description: Istante UTC ISO 8601 }
+                durationMinutes: { type: integer, default: 60, minimum: 1, maximum: 1440 }
+      responses:
+        '200': { description: Appuntamento aggiornato }
+        '409': { description: Orario passato, partita conclusa o conflitto sul bersaglio }
+  /tornei/partite/{matchId}/appuntamento:
+    get:
+      summary: Orario e presenza; PLAYER solo se partecipa
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { name: matchId, in: path, required: true, schema: { type: integer, format: int64 } } ]
+      responses:
+        '200': { description: Appuntamento }
+  /tornei/partite/{matchId}/pronto:
+    post:
+      summary: Segna la presenza del giocatore autenticato dall'orario assegnato fino a cinque minuti dopo
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { name: matchId, in: path, required: true, schema: { type: integer, format: int64 } } ]
+      responses:
+        '200': { description: Presenza registrata }
+        '409': { description: Fuori dalla finestra di presentazione }
+  /tornei/partite/{matchId}/accetta:
+    post:
+      summary: Accetta la sfida; la seconda accettazione assegna il primo orario libero entro le date del torneo
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { name: matchId, in: path, required: true, schema: { type: integer, format: int64 } } ]
+      responses:
+        '200': { description: Stato delle accettazioni e appuntamento, se assegnato }
+        '403': { description: Il giocatore non partecipa alla partita }
+        '409': { description: Intervallo esaurito o bersaglio occupato }
+  /tornei/partite/{matchId}/accesso:
+    get:
+      summary: Verifica server della partecipazione e della finestra del bersaglio
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { name: matchId, in: path, required: true, schema: { type: integer, format: int64 } } ]
+      responses:
+        '200': { description: Accesso autorizzato }
+        '403': { description: Non partecipante o link non disponibile }
+  /tornei/mie-iscrizioni:
+    get:
+      summary: ID dei tornei a cui è iscritto il giocatore autenticato
+      security: [ { bearerAuth: [] } ]
+      responses:
+        '200':
+          description: ID dei tornei del giocatore
+          content:
+            application/json:
+              schema: { type: array, items: { type: integer, format: int64 } }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+  /tornei/miei-abbinamenti:
+    get:
+      summary: Abbinamenti pubblicati del giocatore autenticato, inclusi i turni di riposo
+      security: [ { bearerAuth: [] } ]
+      responses:
+        '200':
+          description: Abbinamenti con torneo, turno, locale e stato dell'avviso
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Pairing' } }
+
+  /tornei/avvisi/{matchId}/letto:
+    post:
+      summary: Segna come letto un avviso di abbinamento del giocatore autenticato
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { name: matchId, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '204': { description: Avviso letto }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+
+  /tornei:
+    get:
+      summary: Lista tornei, paginata
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { name: page, in: query, schema: { type: integer } }
+        - { name: size, in: query, schema: { type: integer } }
+      responses:
+        '200': { description: Pagina di tornei }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+    post:
+      summary: Crea un torneo con inizio e fine programmati (GAME_ADMIN o PLATFORM_ADMIN)
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateTournamentRequest' }
+      responses:
+        '201':
+          description: Torneo creato
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Tournament' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+
+  /tornei/{id}:
+    get:
+      summary: Dettaglio torneo
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/TournamentId' } ]
+      responses:
+        '200':
+          description: Torneo
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Tournament' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+    put:
+      summary: Aggiorna nome/politica dei punti (PLATFORM_ADMIN, non su torneo CHIUSO)
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/TournamentId' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateTournamentRequest' }
+      responses:
+        '200':
+          description: Torneo aggiornato
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Tournament' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '409': { $ref: '#/components/responses/ConflictError' }
+    delete:
+      summary: Elimina il torneo (PLATFORM_ADMIN)
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/TournamentId' } ]
+      responses:
+        '204': { description: Eliminato }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+
+  /tornei/{id}/locali:
+    post:
+      summary: Associa un locale al torneo (PLATFORM_ADMIN)
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/TournamentId' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddLocaleRequest' }
+      responses:
+        '201':
+          description: Torneo aggiornato
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Tournament' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '409': { $ref: '#/components/responses/ConflictError' }
+
+  /tornei/{id}/locali/{localeId}:
+    delete:
+      summary: Rimuove un locale dal torneo (PLATFORM_ADMIN)
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { $ref: '#/components/parameters/TournamentId' }
+        - { name: localeId, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '204': { description: Rimosso }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+
+  /tornei/{id}/iscrizioni:
+    get:
+      summary: Lista iscritti al torneo
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/TournamentId' } ]
+      responses:
+        '200': { description: Lista di iscrizioni }
+    post:
+      summary: Iscrive prima dell'inizio un giocatore o una squadra (amministratori o PLAYER per se stesso in torneo INDIVIDUALE)
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/TournamentId' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EnrollRequest' }
+      responses:
+        '201':
+          description: Iscrizione creata
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Enrollment' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '409': { $ref: '#/components/responses/ConflictError' }
+        '422': { $ref: '#/components/responses/BusinessRuleError' }
+
+  /tornei/{id}/iscrizioni/{pid}:
+    delete:
+      summary: Ritira un'iscrizione (PLATFORM_ADMIN, oppure il giocatore stesso)
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { $ref: '#/components/parameters/TournamentId' }
+        - { name: pid, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '204': { description: Ritirata }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+
+  /tornei/{id}/partite:
+    post:
+      summary: Aggiunge manualmente una partita già esistente al torneo (PLATFORM_ADMIN)
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/TournamentId' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddMatchRequest' }
+      responses:
+        '201': { description: Partita associata }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '422':
+          description: La partita è di un tipo di gioco diverso da quello del torneo (GIOCO_NON_COMPATIBILE)
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+
+  /tornei/{id}/partite/{matchId}:
+    delete:
+      summary: Rimuove una partita dal torneo (PLATFORM_ADMIN)
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { $ref: '#/components/parameters/TournamentId' }
+        - { name: matchId, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '204': { description: Rimossa }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+
+  /tornei/{id}/calendario:
+    post:
+      summary: Genera alla data di inizio il calendario; ripetere la chiamata restituisce gli ID già generati
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { $ref: '#/components/parameters/TournamentId' }
+      responses:
+        '201': { description: Elenco dei matchId generati }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '409':
+          description: Torneo non ancora iniziato
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+        '422': { $ref: '#/components/responses/BusinessRuleError' }
+
+  /tornei/{id}/chiudi:
+    post:
+      summary: Chiude il torneo (PLATFORM_ADMIN); rifiuta se esistono partite non COMPLETATA
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/TournamentId' } ]
+      responses:
+        '200':
+          description: Torneo chiuso, con vincitore
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Tournament' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '422': { $ref: '#/components/responses/BusinessRuleError' }
+
+  /tornei/{id}/classifica:
+    get:
+      summary: Classifica del torneo
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/TournamentId' } ]
+      responses:
+        '200': { description: Lista ordinata di righe di classifica }
+
+  /health:
+    get:
+      summary: Stato del servizio
+      security: []
+      responses:
+        '200':
+          description: Stato
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Health' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    TournamentId:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
+
+  responses:
+    UnauthorizedError:
+      description: Token assente, scaduto o non valido
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+    ForbiddenError:
+      description: Ruolo insufficiente (NON_AUTORIZZATO)
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+    NotFoundError:
+      description: Risorsa inesistente
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+    ConflictError:
+      description: Torneo chiuso o iscrizione/stato incompatibile
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+    BusinessRuleError:
+      description: Regola di dominio violata (es. TORNEO_SENZA_LOCALI, GIOCO_NON_COMPATIBILE)
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        timestamp: { type: string, format: date-time }
+        status: { type: integer }
+        codice: { type: string }
+        messaggio: { type: string }
+        path: { type: string }
+
+    CreateTournamentRequest:
+      type: object
+      required: [nome, gameTypeId, modalita, dataInizio, dataFine]
+      properties:
+        nome: { type: string }
+        gameTypeId: { type: integer, format: int64 }
+        modalita: { type: string, enum: [INDIVIDUALE, SQUADRA] }
+        formula: { type: string, enum: [GIRONE, ELIMINAZIONE], nullable: true }
+        puntiVittoria: { type: integer, nullable: true }
+        puntiPareggio: { type: integer, nullable: true }
+        puntiSconfitta: { type: integer, nullable: true }
+        dataInizio: { type: string, format: date-time, description: "Inizio programmato, con fuso orario" }
+        dataFine: { type: string, format: date-time, description: "Fine programmata, con fuso orario" }
+
+    UpdateTournamentRequest:
+      type: object
+      properties:
+        nome: { type: string, nullable: true }
+        puntiVittoria: { type: integer, nullable: true }
+        puntiPareggio: { type: integer, nullable: true }
+        puntiSconfitta: { type: integer, nullable: true }
+
+    Tournament:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        nome: { type: string }
+        gameTypeId: { type: integer, format: int64 }
+        modalita: { type: string, enum: [INDIVIDUALE, SQUADRA] }
+        formula: { type: string, enum: [GIRONE, ELIMINAZIONE] }
+        puntiVittoria: { type: integer }
+        puntiPareggio: { type: integer }
+        puntiSconfitta: { type: integer }
+        dataInizio: { type: string, format: date-time }
+        dataFine: { type: string, format: date-time }
+        dataInizioEffettiva: { type: string, format: date-time, nullable: true }
+        dataFineEffettiva: { type: string, format: date-time, nullable: true }
+        calendarioEsito: { type: string, nullable: true, enum: [ISCRITTI_INSUFFICIENTI] }
+        stato: { type: string, enum: [APERTO, IN_CORSO, CHIUSO] }
+        vincitoreParticipantId: { type: integer, format: int64, nullable: true }
+        locali: { type: array, items: { type: integer, format: int64 } }
+
+    Pairing:
+      type: object
+      properties:
+        matchId: { type: integer, format: int64, description: "Negativo per un turno di riposo" }
+        tournamentId: { type: integer, format: int64 }
+        torneo: { type: string }
+        turno: { type: integer }
+        locale: { type: string }
+        incontro: { type: string }
+        avversario: { type: string }
+        riposo: { type: boolean }
+        letto: { type: boolean }
+        scheduledAt: { type: string, format: date-time, nullable: true }
+        linkAt: { type: string, format: date-time, nullable: true }
+        deadline: { type: string, format: date-time, nullable: true }
+        outcome: { type: string, nullable: true, enum: [VITTORIA_A_TAVOLINO, DOPPIA_ASSENZA, IN_CORSO, COMPLETATA] }
+        stato: { type: string, nullable: true }
+        homeReady: { type: boolean }
+        awayReady: { type: boolean }
+        linkAvailable: { type: boolean }
+        esitoAssenza: { type: string, nullable: true }
+        homeAccepted: { type: boolean }
+        awayAccepted: { type: boolean }
+        acceptedByMe: { type: boolean }
+        individual: { type: boolean }
+
+    AddLocaleRequest:
+      type: object
+      required: [localeId]
+      properties:
+        localeId: { type: integer, format: int64 }
+
+    EnrollRequest:
+      type: object
+      required: [participantId]
+      properties:
+        participantId:
+          type: integer
+          format: int64
+          description: playerId (torneo INDIVIDUALE) o teamId (torneo SQUADRA)
+
+    Enrollment:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        tournamentId: { type: integer, format: int64 }
+        participantId: { type: integer, format: int64 }
+        tipo: { type: string, enum: [GIOCATORE, SQUADRA] }
+        dataIscrizione: { type: string, format: date-time }
+
+    AddMatchRequest:
+      type: object
+      required: [matchId]
+      properties:
+        matchId: { type: integer, format: int64 }
+
+    StandingRow:
+      type: object
+      properties:
+        participantId: { type: integer, format: int64 }
+        participantName: { type: string, description: Username del giocatore o nome della squadra }
+        punti: { type: integer }
+        partiteGiocate: { type: integer }
+        vittorie: { type: integer }
+        posizione: { type: integer, nullable: true }
+
+    Health:
+      type: object
+      properties:
+        servizio: { type: string }
+        versione: { type: string }
+        uptimeS: { type: integer, format: int64 }
+        database: { type: string, enum: [OK, KO] }
+        mqtt: { type: string, enum: [CONNESSO, DISCONNESSO] }

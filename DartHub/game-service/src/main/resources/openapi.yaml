@@ -1,0 +1,284 @@
+openapi: 3.0.3
+info:
+  title: game-service
+  description: >
+    Tipologie di gioco, sensori, regole di punteggio (ARCHITETTURA.md §5.3). Porta 7003.
+  version: 1.0.0
+servers:
+  - url: http://localhost:7003
+
+paths:
+  /giochi:
+    get:
+      summary: Lista giochi (lettura pubblica agli utenti autenticati)
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - { name: page, in: query, schema: { type: integer } }
+        - { name: size, in: query, schema: { type: integer } }
+      responses:
+        '200': { description: Pagina di giochi }
+    post:
+      summary: Crea un gioco (GAME_ADMIN)
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateGameTypeRequest' }
+      responses:
+        '201':
+          description: Gioco creato
+          content: { application/json: { schema: { $ref: '#/components/schemas/GameType' } } }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '409': { $ref: '#/components/responses/ConflictError' }
+
+  /giochi/{id}:
+    get:
+      summary: Dettaglio gioco
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/GameTypeId' } ]
+      responses:
+        '200': { description: Gioco, content: { application/json: { schema: { $ref: '#/components/schemas/GameType' } } } }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+    put:
+      summary: Aggiorna un gioco (GAME_ADMIN)
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/GameTypeId' } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/UpdateGameTypeRequest' } } }
+      responses:
+        '200': { description: Gioco aggiornato }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+    delete:
+      summary: Elimina un gioco (GAME_ADMIN)
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/GameTypeId' } ]
+      responses:
+        '204': { description: Eliminato }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+
+  /giochi/{gameTypeId}/sensori:
+    get:
+      summary: Lista sensori del gioco (GAME_ADMIN)
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/GameTypeIdPath' } ]
+      responses:
+        '200': { description: Pagina di sensori }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+    post:
+      summary: Crea un sensore per il gioco (GAME_ADMIN)
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/GameTypeIdPath' } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateSensorTypeRequest' } } }
+      responses:
+        '201': { description: Sensore creato, content: { application/json: { schema: { $ref: '#/components/schemas/SensorType' } } } }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '409': { $ref: '#/components/responses/ConflictError' }
+
+  /sensori/{id}:
+    get:
+      summary: Dettaglio sensore (GAME_ADMIN)
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/SensorTypeId' } ]
+      responses:
+        '200': { description: Sensore }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+    put:
+      summary: Aggiorna un sensore (GAME_ADMIN)
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/SensorTypeId' } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/UpdateSensorTypeRequest' } } }
+      responses:
+        '200': { description: Sensore aggiornato }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+    delete:
+      summary: Elimina un sensore (GAME_ADMIN)
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/SensorTypeId' } ]
+      responses:
+        '204': { description: Eliminato }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+
+  /giochi/{gameTypeId}/regole:
+    get:
+      summary: Lista regole del gioco (lettura pubblica agli utenti autenticati)
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/GameTypeIdPath' } ]
+      responses:
+        '200': { description: Pagina di regole }
+    post:
+      summary: Crea una regola per il gioco (GAME_ADMIN)
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/GameTypeIdPath' } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateScoringRuleRequest' } } }
+      responses:
+        '201': { description: Regola creata, content: { application/json: { schema: { $ref: '#/components/schemas/ScoringRule' } } } }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '409': { $ref: '#/components/responses/ConflictError' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+
+  /regole/{id}:
+    get:
+      summary: Dettaglio regola (GAME_ADMIN)
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/ScoringRuleId' } ]
+      responses:
+        '200': { description: Regola, content: { application/json: { schema: { $ref: '#/components/schemas/ScoringRule' } } } }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+    put:
+      summary: Aggiorna una regola (GAME_ADMIN)
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/ScoringRuleId' } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/UpdateScoringRuleRequest' } } }
+      responses:
+        '200': { description: Regola aggiornata }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+    delete:
+      summary: Elimina una regola (GAME_ADMIN)
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/ScoringRuleId' } ]
+      responses:
+        '204': { description: Eliminata }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+
+  /health:
+    get:
+      summary: Stato del servizio
+      security: []
+      responses:
+        '200': { description: Stato, content: { application/json: { schema: { $ref: '#/components/schemas/Health' } } } }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  parameters:
+    GameTypeId: { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    GameTypeIdPath: { name: gameTypeId, in: path, required: true, schema: { type: integer, format: int64 } }
+    SensorTypeId: { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    ScoringRuleId: { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+
+  responses:
+    ValidationError:
+      description: Payload non valido o punteggi incoerenti con la direzione
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+    ForbiddenError:
+      description: Ruolo insufficiente (richiesto GAME_ADMIN)
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+    NotFoundError:
+      description: Risorsa inesistente
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+    ConflictError:
+      description: Nome/variante già esistente per questo gioco
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        timestamp: { type: string, format: date-time }
+        status: { type: integer }
+        codice: { type: string }
+        messaggio: { type: string }
+        path: { type: string }
+
+    CreateGameTypeRequest:
+      type: object
+      required: [nome]
+      properties:
+        nome: { type: string }
+        descrizione: { type: string, nullable: true }
+
+    UpdateGameTypeRequest:
+      type: object
+      properties:
+        nome: { type: string, nullable: true }
+        descrizione: { type: string, nullable: true }
+
+    GameType:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        nome: { type: string }
+        descrizione: { type: string, nullable: true }
+
+    CreateSensorTypeRequest:
+      type: object
+      required: [nome, formatoDato, modalita]
+      properties:
+        nome: { type: string }
+        formatoDato: { type: string }
+        modalita: { type: string, enum: [REALE, EMULATO] }
+
+    UpdateSensorTypeRequest:
+      type: object
+      properties:
+        nome: { type: string, nullable: true }
+        formatoDato: { type: string, nullable: true }
+        modalita: { type: string, enum: [REALE, EMULATO], nullable: true }
+
+    SensorType:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        gameTypeId: { type: integer, format: int64 }
+        nome: { type: string }
+        formatoDato: { type: string }
+        modalita: { type: string, enum: [REALE, EMULATO] }
+
+    CreateScoringRuleRequest:
+      type: object
+      required: [variante, punteggioIniziale]
+      properties:
+        variante: { type: string }
+        direzione: { type: string, enum: [DECRESCENTE, CRESCENTE], nullable: true }
+        punteggioIniziale: { type: integer }
+        punteggioObiettivo: { type: integer, nullable: true }
+        chiusuraDouble: { type: boolean, nullable: true }
+        bustAnnullaTurno: { type: boolean, nullable: true }
+        maxTiriPerTurno: { type: integer, nullable: true }
+
+    UpdateScoringRuleRequest:
+      type: object
+      properties:
+        variante: { type: string, nullable: true }
+        direzione: { type: string, enum: [DECRESCENTE, CRESCENTE], nullable: true }
+        punteggioIniziale: { type: integer, nullable: true }
+        punteggioObiettivo: { type: integer, nullable: true }
+        chiusuraDouble: { type: boolean, nullable: true }
+        bustAnnullaTurno: { type: boolean, nullable: true }
+        maxTiriPerTurno: { type: integer, nullable: true }
+
+    ScoringRule:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        gameTypeId: { type: integer, format: int64 }
+        variante: { type: string }
+        direzione: { type: string, enum: [DECRESCENTE, CRESCENTE] }
+        punteggioIniziale: { type: integer }
+        punteggioObiettivo: { type: integer }
+        chiusuraDouble: { type: boolean }
+        bustAnnullaTurno: { type: boolean }
+        maxTiriPerTurno: { type: integer }
+
+    Health:
+      type: object
+      properties:
+        servizio: { type: string }
+        versione: { type: string }
+        uptimeS: { type: integer, format: int64 }
+        database: { type: string, enum: [OK, KO] }
+        mqtt: { type: string, enum: [CONNESSO, DISCONNESSO] }
