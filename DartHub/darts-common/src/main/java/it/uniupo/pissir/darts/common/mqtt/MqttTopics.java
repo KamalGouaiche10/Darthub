@@ -16,7 +16,7 @@ public final class MqttTopics {
 
     public static final String EDGE_HEARTBEAT_WILDCARD = "edge/+/+/heartbeat";
 
-    /**
+    /*****
      * Impedisce l'istanziazione della classe di utilità. 
      */
     private MqttTopics() {
